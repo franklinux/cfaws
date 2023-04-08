@@ -1,0 +1,494 @@
+#Subdirección de Administración de Sistemas
+#franklin.tapia@ine.mx / edgar.roldan@ine.mx
+#"07/04/2303" V.01.
+# Template Proyecto SIJE
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Stack apra despliegue de ambientes SIJE-INE-AWS'
+# _  _  ____  ____  __   ____   __  ____  __  
+#( \/ )(  __)(_  _)/ _\ (    \ / _\(_  _)/ _\ 
+#/ \/ \ ) _)   )( /    \ ) D (/    \ )( /    \
+#\_)(_/(____) (__)\_/\_/(____/\_/\_/(__)\_/\_/
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'SIJE-AWS-INE'
+    - Label:
+        default: '..... VPC'
+      Parameters:
+      - VpcCidr
+    - Label:
+        default: '.......... Subnets Publicas'
+      Parameters:
+      - PublicSubnetACidr
+      - PublicSubnetBCidr
+      - PublicSubnetCCidr
+    - Label:
+        default: '.......... Subnets Privadas Lambdas'
+      Parameters:
+      - PrivLambdaSubnetACidr
+      - PrivLambdaSubnetBCidr
+      - PrivLambdaSubnetCCidr
+    - Label:
+        default: '.......... Subnets Privadas Base de Datos'
+      Parameters:
+      - PrivDBSubnetACidr
+      - PrivDBSubnetBCidr
+      - PrivDBSubnetCCidr
+    
+    #PrivDBSubnetA
+    - Label:
+        default: '.....Ec2'
+      Parameters:
+      - KeyPairName
+    
+    - Label:
+        default: '.....RDS'
+      Parameters:
+      - DBInstanceClass
+      - DBUsername
+      - DBPassword
+#____   __   ____   __   _  _  ____  ____  ____   __   ____ 
+#(  _ \ / _\ (  _ \ / _\ ( \/ )(  __)(_  _)(  _ \ /  \ / ___)
+# ) __//    \ )   //    \/ \/ \ ) _)   )(   )   /(  O )\___ \
+#(__)  \_/\_/(__\_)\_/\_/\_)(_/(____) (__) (__\_) \__/ (____/
+Parameters:
+  VpcCidr:
+    Description: 'CIDR para VPC'
+    Type: String
+    Default: 172.16.48.0/20
+  PublicSubnetACidr:
+    Description: 'CIDR para Subnet Publica AZ 1a'
+    Type: String
+    Default: 172.16.48.0/24
+  PublicSubnetBCidr:
+    Description: 'CIDR para Subnet Publica AZ 1b'
+    Type: String
+    Default: 172.16.49.0/24
+  PublicSubnetCCidr:
+    Description: 'CIDR para Subnet Publica AZ 1c'
+    Type: String
+    Default: 172.16.50.0/24
+  PrivLambdaSubnetACidr:
+    Description: 'CIDR para Subnet Privada para Lambdas AZ 1a'
+    Type: String
+    Default: 172.16.51.0/24
+  PrivLambdaSubnetBCidr:
+    Description: 'CIDR para Subnet Privada para Lambdas AZ 1b'
+    Type: String
+    Default: 172.16.52.0/24
+  PrivLambdaSubnetCCidr:
+    Description: 'CIDR para Subnet Privada para Lambdas AZ 1c'
+    Type: String
+    Default: 172.16.53.0/24
+  PrivDBSubnetACidr:
+    Description: 'CIDR para Subnet Privada para Base de Datos AZ 1a'
+    Type: String
+    Default: 172.16.54.0/24
+  PrivDBSubnetBCidr:
+    Description: 'CIDR para Subnet Privada para Base de Datos AZ 1b'
+    Type: String
+    Default: 172.16.55.0/24
+  PrivDBSubnetCCidr:
+    Description: 'CIDR para Subnet Privada para Base de Datos AZ 1c'
+    Type: String
+    Default: 172.16.56.0/24
+  
+  KeyPairName:
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    Description: Seleccione una de las KeyPair Existentes
+  DBInstanceClass:
+    Description: 'Tipo de Instancia DB'
+    Type: String
+    Default: 'db.r5.large'
+  DBUsername:
+    NoEcho: 'true'
+    Description: Nombre de usuario para DB
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: 'true'
+    Description: Password para usuarui de DB
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+# ____  ____  ___  _  _  ____  ____   __   ____ 
+#(  _ \(  __)/ __)/ )( \(  _ \/ ___) /  \ / ___)
+# )   / ) _)( (__ ) \/ ( )   /\___ \(  O )\___ \
+#(__\_)(____)\___)\____/(__\_)(____/ \__/ (____/
+Resources:
+# _  _  ____   ___ 
+#/ )( \(  _ \ / __)
+#\ \/ / ) __/( (__ 
+# \__/ (__)   \___)
+#Cración de VPC para SIJE
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr #172.16.48.0/20
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value:  !Join ['', ["VPC-", !Ref "AWS::StackName"]]
+ #Internet GW
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+    Properties:
+      Tags:
+      - Key: Name
+        Value:  !Sub Igw-${AWS::StackName}
+ 
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+#  ____  _  _  ____  __ _  ____  ____  ____ 
+#/ ___)/ )( \(  _ \(  ( \(  __)(_  _)/ ___)
+#\___ \) \/ ( ) _ (/    / ) _)   )(  \___ \
+#(____/\____/(____/\_)__)(____) (__) (____/
+# Creación de Subnets
+  # SubNet Publica 1a
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetACidr #172.16.48.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Toma la primera AZ        
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-Public-A
+  #SubNet Publica 1B
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetBCidr #172.16.49.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-Public-B
+  #SubNet Publica 1C
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetCCidr #172.16.50.0/24
+      AvailabilityZone: !Select [ 2, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-Public-C
+  #SubNet Privada LAMBDA 1A
+  PrivLambdaSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivLambdaSubnetACidr #172.16.51.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-Priv-Lambda-A
+  #SubNet Privada LAMBDA 1B
+  PrivLambdaSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivLambdaSubnetBCidr #172.16.52.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-Priv-Lambda-B
+  #SubNet Privada LAMBDA 1C
+  PrivLambdaSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivLambdaSubnetCCidr #172.16.53.0/24
+      AvailabilityZone: !Select [ 2, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-Priv-Lambda-C
+    #SubNet Privada DB 1A
+  #SubNet Privada DB 1B
+  PrivDBSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivDBSubnetACidr #172.16.54.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-DB-Priv-A
+  #SubNet Privada DB 1B
+  PrivDBSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivDBSubnetBCidr #172.16.55.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-DB-Priv-B
+  #SubNet PrivadaDB 1C
+  PrivDBSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivDBSubnetCCidr #172.16.56.0/24
+      AvailabilityZone: !Select [ 2, !GetAZs ]
+      Tags:
+      - Key: Name
+        Value: !Sub Subnet-${AWS::StackName}-DB-Priv-C
+# ____   __   _  _  ____  ____    ____  __   ____  __    ____  ____ 
+#(  _ \ /  \ / )( \(_  _)(  __)  (_  _)/ _\ (  _ \(  )  (  __)/ ___)
+# )   /(  O )) \/ (  )(   ) _)     )( /    \ ) _ (/ (_/\ ) _) \___ \
+#(__\_) \__/ \____/ (__) (____)   (__)\_/\_/(____/\____/(____)(____/
+#Tablas de Ruteo
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub TR-${AWS::StackName}-Public
+ #Tabla de ruteo para Internet en las Públicas
+  PublicRoute1:   
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+ #Tablas de Ruteo Privada
+  PrivateRouteTableLB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub TR-${AWS::StackName}-Lambda-Priv
+  PrivateRouteTableDB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub TR-${AWS::StackName}-DB-Priv
+  # Tabla para que la subnets privadas tenga internet por NATGw
+  PrivateRoute1:            
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableLB
+      DestinationCidrBlock: 0.0.0.0/0
+      # Salida por el NATGw
+      NatGatewayId: !Ref NATGateway
+  #Agregando las subnets a tablas de ruteo publicas y privadas
+ #Asignacion Publica
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+ #Asignacion LAMBDA
+  PrivateSubnetARouteTableAssociationLB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivLambdaSubnetA
+      RouteTableId: !Ref PrivateRouteTableLB
+  PrivateSubnetBRouteTableAssociationLB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivLambdaSubnetB
+      RouteTableId: !Ref PrivateRouteTableLB
+  PrivateSubnetCRouteTableAssociationLB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivLambdaSubnetC
+      RouteTableId: !Ref PrivateRouteTableLB
+  #Asignacion DB
+  PrivateSubnetARouteTableAssociationDB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivDBSubnetA
+      RouteTableId: !Ref PrivateRouteTableDB
+  PrivateSubnetBRouteTableAssociationDB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivDBSubnetB
+      RouteTableId: !Ref PrivateRouteTableDB
+  PrivateSubnetCRouteTableAssociationDB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivDBSubnetC
+      RouteTableId: !Ref PrivateRouteTableDB
+  #NAT Gateway: 
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt ElasticIPAddress.AllocationId
+      SubnetId: !Ref PublicSubnetA 
+      Tags: 
+      - Key: Name
+        Value: !Sub NATGW-${AWS::StackName}
+  ElasticIPAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+#   _____                      _ _            _____                           
+#  / ____|                    (_) |          / ____|                          
+# | (___   ___  ___ _   _ _ __ _| |_ _   _  | |  __ _ __ ___  _   _ _ __  ___ 
+#  \___ \ / _ \/ __| | | | '__| | __| | | | | | |_ | '__/ _ \| | | | '_ \/ __|
+#  ____) |  __/ (__| |_| | |  | | |_| |_| | | |__| | | | (_) | |_| | |_) \__ \
+# |_____/ \___|\___|\__,_|_|  |_|\__|\__, |  \_____|_|  \___/ \__,_| .__/|___/
+#                                     __/ |                        | |        
+#                                    |___/                         |_|        
+#sg
+  #Bastion permite acceso por SSH por X IPs INE
+  BastionSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permite acceso SSH
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 200.34.165.45/32
+      Tags:
+        -
+          Key: Name
+          Value: !Sub SG-BASTION-${AWS::StackName}
+  #Agrupa en un SG las lambdas que requieren acceso a la DB
+  LambdaSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permite acceso SSH
+      VpcId: !Ref VPC
+      Tags:
+        -
+          Key: Name
+          Value: !Sub SG-LAMBDAS-${AWS::StackName}
+  #Bastion permite acceso por por el puerto de la DB desde el Bastion y el SG de las Lambdas 
+  DbSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permite acceso a la DB por el bastion
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref LambdaSG
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+        - SourceSecurityGroupId: !Ref BastionSG
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+      Tags:
+        -
+          Key: Name
+          Value: !Sub SG-DB-${AWS::StackName}
+# ____  ____ 
+#/ ___)( __ \
+#\___ \ (__ (
+#(____/(____/
+#s3
+  EndpointS3Gw:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Gateway #Gw es por default
+      ServiceName: com.amazonaws.us-east-1.s3 #!Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcId: !Ref VPC
+      #SubnetIds: 
+      #  - !Ref subnetA
+      #  - !Ref subnetB
+      #SecurityGroupIds:
+      #  - !Ref mySecurityGroup
+      RouteTableIds: 
+        - !Ref PrivateRouteTableLB
+# ____  ___  ____ 
+#(  __)/ __)(___ \
+# ) _)( (__  / __/
+#(____)\___)(____)
+#EC2 Bstion
+  BastionEc2:
+    Type: AWS::EC2::Instance
+    DependsOn: PublicSubnetA
+    Properties:
+      #AvailabilityZone: !Select [ 0, !GetAZs ]    # Toma la primera AZ
+      ImageId: ami-00c39f71452c08778
+      InstanceType: t2.micro
+      SubnetId: !Ref PublicSubnetA #subnet-0f4dd203f08551b01
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds: 
+        - !Ref BastionSG
+      #SecurityGroups: !Ref BastionSG
+      Tags:
+        -
+          Key: Name
+          Value: !Sub Bastion-${AWS::StackName}
+  IPElastica:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref BastionEc2
+# ____  ____ 
+#(    \(  _ \
+# ) D ( ) _ (
+#(____/(____/
+#Grupo de Subnets
+  GpoSubnets:
+      Type: AWS::RDS::DBSubnetGroup
+      Properties: 
+        DBSubnetGroupDescription:  Grupo de Subnets para DB
+        DBSubnetGroupName: !Join ['-', ["gs", !Ref "AWS::StackName"]]
+        SubnetIds: 
+          - !Ref PrivDBSubnetA
+          - !Ref PrivDBSubnetB
+          - !Ref PrivDBSubnetC
+  RDSCluster:
+    Type: 'AWS::RDS::DBCluster'
+    Properties:
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBClusterIdentifier: !Join ['', ["Cluster-", !Ref "AWS::StackName"]]
+      Engine: aurora-postgresql
+      #EngineVersion: '10.7'
+      DBSubnetGroupName: !Ref GpoSubnets #gs-dpa-capa
+      EnableCloudwatchLogsExports:
+        - postgresql
+  RDSDBInstance1:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: !Join ['', ["Intance1-", !Ref "AWS::StackName"]]
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref RDSCluster
+      PubliclyAccessible: 'false'
+      DBInstanceClass: !Ref DBInstanceClass #db.r5.large
+      #DBClusterParameterGroupName: parametrosdbdpa
+
+  RDSDBInstance2:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: !Join ['', ["Intance2-", !Ref "AWS::StackName"]]
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref RDSCluster
+      PubliclyAccessible: 'false'
+      DBInstanceClass: !Ref DBInstanceClass
+      #DBClusterParameterGroupName: parametrosdbdpa    
